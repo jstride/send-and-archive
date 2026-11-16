@@ -8,6 +8,7 @@ A Thunderbird extension that adds a "Send and Archive" feature to compose window
 *   **Keyboard Shortcut**: Use `Ctrl+Shift+S` to quickly send and archive
 *   **Conditionally Enabled**: Button is only enabled when replying-to or forwarding existing messages and if archive folder is configured
 *   **Configurable Notifications**: Enable or disable success notifications via the options page (options page: Tools → Add-ons and Themes → Send and Archive → Options)
+*   **Optional Whole-Thread Archiving**: When enabled, replies archive all confidently matched messages from the thread in the original message's current folder; messages in Sent and other folders remain untouched
 *   **Error Handling**: Only archives if the send operation succeeds
 
 ## Compatibility
@@ -33,7 +34,7 @@ To create an installable XPI file, use script [`build.sh`](build.sh) or:
 
 ```
 cd thunderbird-send-and-archive
-zip -r send-and-archive.xpi manifest.json background.js options.html options.js icons/ -x "*.DS_Store" "*.git*"
+zip -r send-and-archive.xpi manifest.json thread-utils.js background.js options.html options.js icons/ -x "*.DS_Store" "*.git*"
 ```
 
 Then install the XPI file through Thunderbird's Add-ons manager.
@@ -78,6 +79,7 @@ This extension uses Manifest Version 3 for compatibility with modern Thunderbird
 ```
 thunderbird-send-and-archive/
 ├── manifest.json          # Extension manifest (Manifest V3)
+├── thread-utils.js        # Email thread matching helpers
 ├── background.js          # Main extension logic
 ├── options.html           # Options page UI
 ├── options.js            # Options page logic
@@ -95,6 +97,7 @@ The extension uses proper Thunderbird WebExtension APIs (not Firefox APIs):
 *   `messenger.compose.sendMessage(tabId, {mode: 'sendNow'})`: Send the composed message immediately
 *   `messenger.composeAction.enable()/disable()`: Control button visibility based on compose type
 *   `messenger.messages.archive()`: Archive messages using native functionality
+*   `messenger.messages.query()` and `getFull()`: Find same-folder messages linked by Message-ID, References, and In-Reply-To headers
 *   `messenger.storage.local`: Store and retrieve settings
 
 **Important**: The extension uses `browser_specific_settings` (not `applications`) in manifest.json for Manifest V3 compatibility.
@@ -126,6 +129,13 @@ For issues, feature requests, or contributions, please check the extension's rep
 ## Version History
 
 ### For full technical notes on version history, see [CHANGELOG.md](CHANGELOG.md)
+
+### 1.0.5
+
+*   **NEW**: Optional "Archive the whole thread when replying" setting
+*   **SCOPED**: Only matching messages in the original email's current folder are archived; Sent and other folders are unchanged
+*   **SAFE DEFAULT**: The option is disabled by default, and forwards retain original-message-only behavior
+*   **IMPROVED**: Thread matching uses Message-ID, References, and In-Reply-To headers and warns when discovery is incomplete
 
 ### 1.0.4 
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## Version 1.0.5 (2026-11-16)
+
+### Added
+
+*   Added an unchecked-by-default "Archive the whole thread when replying" option
+*   Added same-folder thread discovery using normalized subjects plus Message-ID, References, and In-Reply-To relationships
+*   Added automated Node tests for thread matching, pagination, reply/forward behavior, send failures, and partial discovery
+
+### Changed
+
+*   Replies can archive all confidently matched messages in the source folder after a successful send
+*   Forwards continue to archive only the original message
+*   Whole-thread success notifications report the number of archived messages
+*   Incomplete thread discovery falls back to confidently matched messages, always including the original, and displays a warning
+*   The XPI build now includes `thread-utils.js`
+
+### Security and scope
+
+*   No new permissions were added
+*   Messages in Sent, other folders, subfolders, and other accounts are not searched or archived
+
 ## Version 1.0.4 (2025-11-18)
 
 ### Added

@@ -1,4 +1,3 @@
-
 #!/bin/bash
 # Build script to create a distributable XPI package
 
@@ -10,6 +9,7 @@ rm -f send-and-archive.xpi
 # Create the XPI package
 zip -r send-and-archive.xpi \
   manifest.json \
+  thread-utils.js \
   background.js \
   options.html \
   options.js \

@@ -7,11 +7,13 @@
 // Load saved settings
 async function loadSettings() {
   try {
-    const result = await messenger.storage.local.get('showNotifications');
+    const result = await messenger.storage.local.get(['showNotifications', 'archiveWholeThread']);
     const showNotifications = result.showNotifications !== undefined ? result.showNotifications : true;
+    const archiveWholeThread = result.archiveWholeThread !== undefined ? result.archiveWholeThread : false;
     
     document.getElementById('showNotifications').checked = showNotifications;
-    console.log('Settings loaded:', { showNotifications });
+    document.getElementById('archiveWholeThread').checked = archiveWholeThread;
+    console.log('Settings loaded:', { showNotifications, archiveWholeThread });
   } catch (error) {
     console.error('Error loading settings:', error);
   }
@@ -21,10 +23,11 @@ async function loadSettings() {
 async function saveSettings() {
   try {
     const showNotifications = document.getElementById('showNotifications').checked;
+    const archiveWholeThread = document.getElementById('archiveWholeThread').checked;
     
-    await messenger.storage.local.set({ showNotifications });
+    await messenger.storage.local.set({ showNotifications, archiveWholeThread });
     
-    console.log('Settings saved:', { showNotifications });
+    console.log('Settings saved:', { showNotifications, archiveWholeThread });
     
     // Show save confirmation
     const saveStatus = document.getElementById('saveStatus');
@@ -46,4 +49,5 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Save settings when checkbox changes
   document.getElementById('showNotifications').addEventListener('change', saveSettings);
+  document.getElementById('archiveWholeThread').addEventListener('change', saveSettings);
 });

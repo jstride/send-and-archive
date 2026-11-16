@@ -2,7 +2,7 @@
 {
   "manifest_version": 3,
   "name": "Send and Archive",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Send your message and automatically archive the original message being replied to",
   "author": "blalond",
   "browser_specific_settings": {
@@ -12,7 +12,7 @@
     }
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": ["thread-utils.js", "background.js"]
   },
   "permissions": [
     "compose",

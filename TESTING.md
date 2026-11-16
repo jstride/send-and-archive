@@ -8,7 +8,7 @@
 
 1.  Load the extension as described above
 2.  Open the Browser Console: **Tools** → **Developer Tools** → **Browser Console** (`Ctrl+Shift+J`)
-3.  Look for the message: "Send and Archive background script loaded (v1.0.3)"
+3.  Look for the message: "Send and Archive background script loaded (v1.0.5)"
 
 **Expected Result:**
 
@@ -91,7 +91,39 @@
 *   When disabled: no notification after archiving
 *   When enabled: notification appears after successful archiving
 
-### Test 7: Send Failure Handling
+### Test 7: Whole-Thread Option Disabled
+
+1.  Leave "Archive the whole thread when replying" disabled
+2.  Reply to a message in a thread containing multiple messages in the same folder
+3.  Use "Send and Archive"
+
+**Expected Result:** Only the original replied-to message is archived.
+
+### Test 8: Whole-Thread Reply
+
+1.  Enable "Archive the whole thread when replying"
+2.  Reply to a thread containing multiple related messages in the same folder
+3.  Ensure the thread also has a sent copy or related message in another folder
+4.  Use "Send and Archive"
+
+**Expected Result:** Matching messages in the original folder are archived, Sent and other folders remain untouched, and the notification reports the count.
+
+### Test 9: Whole-Thread Forward
+
+1.  Keep the whole-thread option enabled
+2.  Forward a message from a multi-message thread using "Send and Archive"
+
+**Expected Result:** Only the original forwarded message is archived.
+
+### Test 10: Unrelated Same-Subject Message
+
+1.  Enable whole-thread archiving
+2.  Place an unrelated message with the same subject in the source folder
+3.  Reply to the real thread using "Send and Archive"
+
+**Expected Result:** The unrelated message is not archived unless it shares a real threading-header relationship.
+
+### Test 11: Send Failure Handling
 
 **Steps:**
 
@@ -106,7 +138,7 @@
 *   Error notification is displayed
 *   Compose window remains open
 
-### Test 8: No Archive Folder Configured
+### Test 12: No Archive Folder Configured
 
 **Steps:**
 
@@ -123,7 +155,7 @@
 *   Console shows archiving error (not "Message archived successfully")
 *   Original message remains in its current location (not archived)
 
-### Test 9: Archive Folder Location
+### Test 13: Archive Folder Location
 
 **Steps:**
 
@@ -138,7 +170,7 @@
 *   Original message is archived according to your existing archive settings
 *   Archive folder structure is respected
 
-### Test 10: Multiple Compose Windows
+### Test 14: Multiple Compose Windows
 
 **Steps:**
 
@@ -151,6 +183,10 @@
 *   Each window operates independently
 *   The correct original message is archived for each reply
 *   No cross-window interference
+
+## Automated Tests
+
+From the repository root, run `node --test`. The suite covers subject and header parsing, connected-thread selection, pagination, folder isolation, reply/forward behavior, send failures, and incomplete discovery warnings.
 
 ## Debugging
 
@@ -233,7 +269,7 @@ When reporting issues, please include:
 
 *   Thunderbird version
 *   Operating system
-*   Extension version (current: 1.0.3)
+*   Extension version (current: 1.0.5)
 *   Steps to reproduce
 *   Console output (from Browser Console)
 *   Expected vs actual behavior

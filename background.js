@@ -4,30 +4,26 @@
  * Background Script - Handles compose window toolbar button and keyboard shortcuts
  */
 
+const threadUtils = typeof ThreadUtils !== 'undefined'
+  ? ThreadUtils
+  : require('./thread-utils.js');
+
 // Store settings in memory for quick access
 let settings = {
-  showNotifications: true
+  showNotifications: true,
+  archiveWholeThread: false
 };
 
 // Load settings on startup
 async function loadSettings() {
   try {
-    const result = await messenger.storage.local.get('showNotifications');
+    const result = await messenger.storage.local.get(['showNotifications', 'archiveWholeThread']);
     settings.showNotifications = result.showNotifications !== undefined ? result.showNotifications : true;
+    settings.archiveWholeThread = result.archiveWholeThread !== undefined ? result.archiveWholeThread : false;
   } catch (error) {
     console.error('Error loading settings:', error);
   }
 }
-
-// Initialize settings
-loadSettings();
-
-// Listen for settings changes
-messenger.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === 'local' && changes.showNotifications) {
-    settings.showNotifications = changes.showNotifications.newValue;
-  }
-});
 
 /**
  * Check if a compose window is a reply or forward (not a new message)
@@ -132,8 +128,12 @@ async function sendAndArchive(tabId) {
   try {
     console.log('Send and Archive triggered for tab:', tabId);
 
-    // Verify this is a reply or forward
-    const isReply = await isReplyOrForward(tabId);
+    // Get the compose details once so the related message and compose type remain consistent.
+    const composeDetails = await messenger.compose.getComposeDetails(tabId);
+    const isReply = composeDetails.type
+      ? composeDetails.type === 'reply' || composeDetails.type === 'forward'
+      : Boolean(composeDetails.relatedMessageId);
+
     if (!isReply) {
       console.log('Not a reply/forward - aborting');
       await messenger.notifications.create({
@@ -145,11 +145,8 @@ async function sendAndArchive(tabId) {
       return;
     }
 
-    // Get the compose details to find the original message
-    const composeDetails = await messenger.compose.getComposeDetails(tabId);
-
     // Get the original message ID
-    let originalMessageId = composeDetails.relatedMessageId;
+    const originalMessageId = composeDetails.relatedMessageId;
 
     if (!originalMessageId) {
       console.log('No related message found - cannot archive');
@@ -164,6 +161,18 @@ async function sendAndArchive(tabId) {
 
     console.log('Found related message ID:', originalMessageId);
 
+    const shouldArchiveWholeThread = settings.archiveWholeThread && composeDetails.type === 'reply';
+    let archivePlan = {
+      messageIds: [originalMessageId],
+      wholeThread: false,
+      incomplete: false
+    };
+
+    if (shouldArchiveWholeThread) {
+      archivePlan = await resolveThreadMessageIds(originalMessageId);
+      console.log('Resolved thread archive targets:', archivePlan.messageIds);
+    }
+
     // Send the message using the correct Thunderbird API
     // The sendMessage function requires the compose.send permission
     console.log('Sending message...');
@@ -173,8 +182,8 @@ async function sendAndArchive(tabId) {
       await messenger.compose.sendMessage(tabId, { mode: 'sendNow' });
       console.log('Message sent successfully');
 
-      // Archive the original message
-      await archiveOriginalMessage(originalMessageId);
+      // Archive only after sending has completed successfully.
+      await archiveMessages(archivePlan);
 
     } catch (sendError) {
       console.error('Error sending message:', sendError);
@@ -199,28 +208,115 @@ async function sendAndArchive(tabId) {
 }
 
 /**
- * Archive the original message using Thunderbird's built-in archive functionality
- * Note: This function assumes archive folder is configured (checked before button is enabled)
- * @param {number} messageId - The message ID to archive
+ * Resolve the messages in the original message's folder that confidently belong
+ * to the same RFC email thread.
+ * @param {number} originalMessageId - The related message ID
+ * @returns {Promise<{messageIds: number[], wholeThread: boolean, incomplete: boolean}>}
  */
-async function archiveOriginalMessage(messageId) {
+async function resolveThreadMessageIds(originalMessageId) {
+  let incomplete = false;
+
   try {
-    console.log('Archiving message:', messageId);
+    const original = await messenger.messages.get(originalMessageId);
+    if (!original.folder || !original.folder.id) {
+      throw new Error('The original message does not have an accessible folder');
+    }
+
+    const normalizedSubject = threadUtils.normalizeSubject(original.subject);
+    if (!normalizedSubject) {
+      throw new Error('The original message does not have a usable subject');
+    }
+
+    const candidatesById = new Map([[original.id, original]]);
+    let page = await messenger.messages.query({
+      folderId: original.folder.id,
+      subject: normalizedSubject
+    });
+
+    while (page) {
+      for (const message of page.messages) {
+        const isSameFolder = !message.folder || message.folder.id === original.folder.id;
+        if (isSameFolder && threadUtils.normalizeSubject(message.subject) === normalizedSubject) {
+          candidatesById.set(message.id, message);
+        }
+      }
+
+      if (!page.id) {
+        break;
+      }
+      page = await messenger.messages.continueList(page.id);
+    }
+
+    const candidates = [];
+    for (const message of candidatesById.values()) {
+      let fullMessage;
+      try {
+        fullMessage = await messenger.messages.getFull(message.id);
+      } catch (error) {
+        incomplete = true;
+        console.warn('Could not inspect message while resolving thread:', message.id, error);
+      }
+
+      candidates.push({
+        id: message.id,
+        threadMessageIds: threadUtils.collectThreadMessageIds(message, fullMessage)
+      });
+    }
+
+    return {
+      messageIds: threadUtils.findConnectedMessageIds(candidates, originalMessageId),
+      wholeThread: true,
+      incomplete
+    };
+  } catch (error) {
+    console.warn('Could not resolve the whole thread; falling back to the original message:', error);
+    return {
+      messageIds: [originalMessageId],
+      wholeThread: true,
+      incomplete: true
+    };
+  }
+}
+
+/**
+ * Archive messages using Thunderbird's built-in archive functionality.
+ * Note: This function assumes archive folder is configured (checked before button is enabled)
+ * @param {{messageIds: number[], wholeThread: boolean, incomplete: boolean}} archivePlan
+ */
+async function archiveMessages(archivePlan) {
+  try {
+    console.log('Archiving messages:', archivePlan.messageIds);
 
     // Use Thunderbird's built-in archive functionality
     // The messages.archive() method automatically handles folder details
     // and respects the user's archive settings
-    await messenger.messages.archive([messageId]);
+    await messenger.messages.archive(archivePlan.messageIds);
 
-    console.log('Message archived successfully');
+    console.log('Messages archived successfully');
+
+    if (archivePlan.incomplete) {
+      const archivedDescription = archivePlan.messageIds.length === 1
+        ? 'the original message was archived'
+        : `${archivePlan.messageIds.length} matching messages were archived`;
+      await messenger.notifications.create({
+        type: 'basic',
+        iconUrl: 'icons/icon-48.png',
+        title: 'Send and Archive - Thread Warning',
+        message: `Message sent and ${archivedDescription}, but some messages in the thread could not be checked.`
+      });
+      return;
+    }
 
     // Show notification if enabled
     if (settings.showNotifications) {
+      const message = archivePlan.wholeThread
+        ? `Message sent and ${archivePlan.messageIds.length} message${archivePlan.messageIds.length === 1 ? '' : 's'} from the thread archived successfully`
+        : 'Message sent and original archived successfully';
       await messenger.notifications.create({
         type: 'basic',
         iconUrl: 'icons/icon-48.png',
         title: 'Send and Archive',
-        message: 'Message sent and original archived successfully'
+        message
       });
     }
 
@@ -233,55 +329,75 @@ async function archiveOriginalMessage(messageId) {
       type: 'basic',
       iconUrl: 'icons/icon-48.png',
       title: 'Send and Archive - Archive Error',
-      message: 'Message sent, but failed to archive original: ' + (error.message || 'Unknown error')
+      message: 'Message sent, but failed to archive message(s): ' + (error.message || 'Unknown error')
     });
   }
 }
 
-// Listen for new compose windows being opened
-// Update button visibility based on whether it's a reply/forward or new message
-messenger.tabs.onCreated.addListener(async (tab) => {
-  // Check if this is a compose window
-  if (tab.type === 'messageCompose') {
-    console.log('New compose window opened:', tab.id);
-    // Wait a bit for the compose window to fully initialize
-    setTimeout(() => {
-      updateButtonVisibility(tab.id);
-    }, 100);
-  }
-});
+function initializeExtension() {
+  loadSettings();
 
-// Also check when tabs are updated (in case compose type changes)
-messenger.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (tab.type === 'messageCompose') {
-    updateButtonVisibility(tabId);
-  }
-});
+  messenger.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local') {
+      return;
+    }
+    if (changes.showNotifications) {
+      settings.showNotifications = changes.showNotifications.newValue;
+    }
+    if (changes.archiveWholeThread) {
+      settings.archiveWholeThread = changes.archiveWholeThread.newValue;
+    }
+  });
 
-// Listen for compose action button clicks (toolbar button in compose window)
-messenger.composeAction.onClicked.addListener(async (tab) => {
-  console.log('Compose action button clicked');
-  await sendAndArchive(tab.id);
-});
+  // Listen for new compose windows being opened.
+  messenger.tabs.onCreated.addListener(async (tab) => {
+    if (tab.type === 'messageCompose') {
+      console.log('New compose window opened:', tab.id);
+      setTimeout(() => {
+        updateButtonVisibility(tab.id);
+      }, 100);
+    }
+  });
 
-// Listen for keyboard shortcut
-messenger.commands.onCommand.addListener(async (command) => {
-  if (command === 'send-and-archive') {
-    console.log('Keyboard shortcut triggered');
-    // Get the current compose window
-    const windows = await messenger.windows.getAll({ populate: true, windowTypes: ['messageCompose'] });
+  messenger.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (tab.type === 'messageCompose') {
+      updateButtonVisibility(tabId);
+    }
+  });
 
-    if (windows.length > 0) {
-      // Get the focused window
-      const focusedWindow = windows.find(w => w.focused);
-      if (focusedWindow && focusedWindow.tabs && focusedWindow.tabs.length > 0) {
-        await sendAndArchive(focusedWindow.tabs[0].id);
-      } else if (windows[0].tabs && windows[0].tabs.length > 0) {
-        // Fallback to first compose window if none is focused
-        await sendAndArchive(windows[0].tabs[0].id);
+  messenger.composeAction.onClicked.addListener(async (tab) => {
+    console.log('Compose action button clicked');
+    await sendAndArchive(tab.id);
+  });
+
+  messenger.commands.onCommand.addListener(async (command) => {
+    if (command === 'send-and-archive') {
+      console.log('Keyboard shortcut triggered');
+      const windows = await messenger.windows.getAll({ populate: true, windowTypes: ['messageCompose'] });
+
+      if (windows.length > 0) {
+        const focusedWindow = windows.find(w => w.focused);
+        if (focusedWindow && focusedWindow.tabs && focusedWindow.tabs.length > 0) {
+          await sendAndArchive(focusedWindow.tabs[0].id);
+        } else if (windows[0].tabs && windows[0].tabs.length > 0) {
+          await sendAndArchive(windows[0].tabs[0].id);
+        }
       }
     }
-  }
-});
+  });
 
-console.log('Send and Archive background script loaded (v1.0.4)');
+  console.log('Send and Archive background script loaded (v1.0.5)');
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    resolveThreadMessageIds,
+    sendAndArchive,
+    archiveMessages,
+    setSettingsForTesting(newSettings) {
+      settings = { ...settings, ...newSettings };
+    }
+  };
+} else {
+  initializeExtension();
+}
