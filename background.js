@@ -386,7 +386,7 @@ function initializeExtension() {
     }
   });
 
-  console.log('Send and Archive background script loaded (v1.0.5)');
+  console.log('Send and Archive background script loaded (v1.0.7)');
 }
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -1,5 +1,19 @@
 # Changelog
 
+## Version 1.0.7 (2026-11-18)
+
+### Fixed
+
+*   Betterbird 153 and later now use the native compose-action click path instead of the legacy Betterbird 140 mouse-release guard
+*   This prevents the managed integration from swallowing Send and Archive clicks before they reach the extension background script
+
+## Version 1.0.6 (2026-11-17)
+
+### Fixed
+
+*   Advanced the packaged extension version so the corrected Windows-managed mouse-release integration can replace version 1.0.5 in Betterbird
+*   The managed integration now resolves the focused compose tab itself instead of relying on a helper that is not part of the upstream 1.0.5 background script
+
 ## Version 1.0.5 (2026-11-16)
 
 ### Added
