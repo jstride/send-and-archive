@@ -8,7 +8,8 @@ function createHarness({
   sendError,
   queryPages,
   fullMessages = {},
-  fullMessageErrors = new Set()
+  fullMessageErrors = new Set(),
+  storedSettings
 } = {}) {
   const archiveCalls = [];
   const notifications = [];
@@ -29,6 +30,15 @@ function createHarness({
   const pages = queryPages || defaultPages;
 
   global.messenger = {
+    storage: {
+      local: {
+        async get() {
+          return typeof storedSettings === 'function'
+            ? storedSettings()
+            : (storedSettings || {});
+        }
+      }
+    },
     compose: {
       async getComposeDetails() {
         return { type: composeType, relatedMessageId: 1 };
@@ -81,6 +91,41 @@ test('disabled option archives only the original message', async () => {
 
   assert.deepEqual(harness.archiveCalls, [[1]]);
   assert.equal(harness.queryCalls.length, 0);
+});
+
+test('waits for persisted settings before deciding whether to archive the thread', async () => {
+  let resolveSettings;
+  const settingsResult = new Promise(resolve => {
+    resolveSettings = resolve;
+  });
+  const root = {
+    id: 2,
+    headerMessageId: '<root@example.com>',
+    subject: 'Project update',
+    folder: { id: 'inbox' }
+  };
+  const harness = createHarness({
+    storedSettings: () => settingsResult,
+    queryPages: [{ id: null, messages: [root] }],
+    fullMessages: {
+      1: { headers: { 'message-id': ['<reply@example.com>'], references: ['<root@example.com>'] } },
+      2: { headers: { 'message-id': ['<root@example.com>'] } }
+    }
+  });
+
+  const loadingSettings = background.startLoadingSettingsForTesting();
+  const sending = background.sendAndArchive(10);
+
+  await Promise.resolve();
+  assert.deepEqual(harness.archiveCalls, []);
+  assert.equal(harness.queryCalls.length, 0);
+
+  resolveSettings({ archiveWholeThread: true, showNotifications: false });
+  await loadingSettings;
+  await sending;
+
+  assert.deepEqual(harness.archiveCalls, [[1, 2]]);
+  assert.equal(harness.queryCalls.length, 1);
 });
 
 test('enabled reply follows pagination and archives only connected same-folder messages', async () => {

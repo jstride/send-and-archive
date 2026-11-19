@@ -14,6 +14,12 @@ let settings = {
   archiveWholeThread: false
 };
 
+// Manifest V3 background pages can be started by the same toolbar/command
+// event that invokes sendAndArchive(). Keep the initial storage read as a
+// promise so the action cannot observe the defaults before persisted settings
+// have finished loading.
+let settingsReady = Promise.resolve();
+
 // Load settings on startup
 async function loadSettings() {
   try {
@@ -127,6 +133,8 @@ async function updateButtonVisibility(tabId) {
 async function sendAndArchive(tabId) {
   try {
     console.log('Send and Archive triggered for tab:', tabId);
+
+    await settingsReady;
 
     // Get the compose details once so the related message and compose type remain consistent.
     const composeDetails = await messenger.compose.getComposeDetails(tabId);
@@ -335,7 +343,7 @@ async function archiveMessages(archivePlan) {
 }
 
 function initializeExtension() {
-  loadSettings();
+  settingsReady = loadSettings();
 
   messenger.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') {
@@ -394,8 +402,13 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveThreadMessageIds,
     sendAndArchive,
     archiveMessages,
+    startLoadingSettingsForTesting() {
+      settingsReady = loadSettings();
+      return settingsReady;
+    },
     setSettingsForTesting(newSettings) {
       settings = { ...settings, ...newSettings };
+      settingsReady = Promise.resolve();
     }
   };
 } else {

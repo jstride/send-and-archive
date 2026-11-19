@@ -1,5 +1,12 @@
 # Changelog
 
+## Version 1.0.8 (2026-11-18)
+
+### Fixed
+
+*   Send and Archive now waits for persisted extension settings before processing a toolbar or keyboard action, preventing a freshly woken Manifest V3 background page from briefly treating the enabled whole-thread option as disabled
+*   Added a regression test that triggers Send and Archive while the initial settings read is still pending
+
 ## Version 1.0.7 (2026-11-18)
 
 ### Fixed

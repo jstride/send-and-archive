@@ -130,6 +130,10 @@ For issues, feature requests, or contributions, please check the extension's rep
 
 ### For full technical notes on version history, see [CHANGELOG.md](CHANGELOG.md)
 
+### 1.0.8
+
+*   **FIXED**: Waits for persisted options to load before a toolbar or keyboard action is processed, so a freshly woken background page honours the enabled whole-thread setting
+
 ### 1.0.5
 
 *   **NEW**: Optional "Archive the whole thread when replying" setting

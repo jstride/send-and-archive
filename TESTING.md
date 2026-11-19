@@ -8,7 +8,7 @@
 
 1.  Load the extension as described above
 2.  Open the Browser Console: **Tools** → **Developer Tools** → **Browser Console** (`Ctrl+Shift+J`)
-3.  Look for the message: "Send and Archive background script loaded (v1.0.5)"
+3.  Look for the message: "Send and Archive background script loaded (v1.0.8)"
 
 **Expected Result:**
 
@@ -269,7 +269,7 @@ When reporting issues, please include:
 
 *   Thunderbird version
 *   Operating system
-*   Extension version (current: 1.0.5)
+*   Extension version (current: 1.0.8)
 *   Steps to reproduce
 *   Console output (from Browser Console)
 *   Expected vs actual behavior
