@@ -7,6 +7,7 @@ function createHarness({
   composeType = 'reply',
   sendError,
   queryPages,
+  referenceMatches = {},
   fullMessages = {},
   fullMessageErrors = new Set(),
   storedSettings
@@ -55,6 +56,9 @@ function createHarness({
       },
       async query(queryInfo) {
         queryCalls.push(queryInfo);
+        if (queryInfo.headerMessageId) {
+          return { id: null, messages: referenceMatches[queryInfo.headerMessageId] || [] };
+        }
         pageIndex = 0;
         return pages[pageIndex++];
       },
@@ -170,6 +174,36 @@ test('enabled option does not expand forwards', async () => {
 
   assert.deepEqual(harness.archiveCalls, [[1]]);
   assert.equal(harness.queryCalls.length, 0);
+});
+
+test('follows References and In-Reply-To across subject changes in the source folder', async () => {
+  const inbox = { id: 'inbox' };
+  const parent = { id: 2, headerMessageId: 'Parent@example.com', subject: 'Revised schedule', folder: inbox };
+  const root = { id: 3, headerMessageId: 'Root@example.com', subject: 'Acceptance', folder: inbox };
+  const sent = { ...parent, id: 4, folder: { id: 'sent' } };
+  const harness = createHarness({
+    referenceMatches: {
+      'Parent@example.com': [parent, sent],
+      'Root@example.com': [root]
+    },
+    fullMessages: {
+      1: { headers: { references: ['<Parent@example.com>'] } },
+      2: { headers: { 'in-reply-to': ['<Root@example.com>'] } }
+    }
+  });
+  const getFull = global.messenger.messages.getFull;
+  global.messenger.messages.getHeaders = async id => (await getFull(id)).headers;
+  global.messenger.messages.getFull = async () => assert.fail('Expected headers-only lookup');
+  background.setSettingsForTesting({ archiveWholeThread: true, showNotifications: false });
+
+  await background.sendAndArchive(10);
+
+  assert.deepEqual(harness.queryCalls, [
+    { folderId: 'inbox', subject: 'project update' },
+    { folderId: 'inbox', headerMessageId: 'Parent@example.com' },
+    { folderId: 'inbox', headerMessageId: 'Root@example.com' }
+  ]);
+  assert.deepEqual(harness.archiveCalls, [[1, 2, 3]]);
 });
 
 test('send failure archives nothing', async () => {

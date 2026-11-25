@@ -28,7 +28,7 @@
       .toLocaleLowerCase();
   }
 
-  function extractMessageIds(values) {
+  function extractMessageIds(values, preserveCase = false) {
     const messageIds = new Set();
 
     for (const value of Array.isArray(values) ? values : [values]) {
@@ -44,7 +44,9 @@
       );
 
       for (const candidate of candidates) {
-        const normalized = normalizeMessageId(candidate);
+        const normalized = preserveCase
+          ? candidate.replace(/^<|>$/g, '')
+          : normalizeMessageId(candidate);
         if (normalized) {
           messageIds.add(normalized);
         }
@@ -86,6 +88,13 @@
     addAll(getHeaderValues(fullMessage && fullMessage.headers, 'in-reply-to'));
 
     return ids;
+  }
+
+  function collectReferencedMessageIds(headers) {
+    return extractMessageIds([
+      ...getHeaderValues(headers, 'references'),
+      ...getHeaderValues(headers, 'in-reply-to')
+    ], true);
   }
 
   function findConnectedMessageIds(candidates, originalMessageId) {
@@ -130,6 +139,7 @@
     extractMessageIds,
     getHeaderValues,
     collectThreadMessageIds,
+    collectReferencedMessageIds,
     findConnectedMessageIds
   };
 }));

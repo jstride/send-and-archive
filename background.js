@@ -231,48 +231,78 @@ async function resolveThreadMessageIds(originalMessageId) {
     }
 
     const normalizedSubject = threadUtils.normalizeSubject(original.subject);
-    if (!normalizedSubject) {
-      throw new Error('The original message does not have a usable subject');
-    }
+    const folderId = original.folder.id;
+    const candidates = new Map();
+    const knownHeaderIds = new Set();
 
-    const candidatesById = new Map([[original.id, original]]);
-    let page = await messenger.messages.query({
-      folderId: original.folder.id,
-      subject: normalizedSubject
-    });
-
-    while (page) {
-      for (const message of page.messages) {
-        const isSameFolder = !message.folder || message.folder.id === original.folder.id;
-        if (isSameFolder && threadUtils.normalizeSubject(message.subject) === normalizedSubject) {
-          candidatesById.set(message.id, message);
-        }
+    async function addCandidate(message) {
+      if (candidates.has(message.id) || (message.folder && message.folder.id !== folderId)) {
+        return;
       }
-
-      if (!page.id) {
-        break;
-      }
-      page = await messenger.messages.continueList(page.id);
-    }
-
-    const candidates = [];
-    for (const message of candidatesById.values()) {
       let fullMessage;
       try {
-        fullMessage = await messenger.messages.getFull(message.id);
+        fullMessage = typeof messenger.messages.getHeaders === 'function'
+          ? { headers: await messenger.messages.getHeaders(message.id) }
+          : await messenger.messages.getFull(message.id);
       } catch (error) {
         incomplete = true;
         console.warn('Could not inspect message while resolving thread:', message.id, error);
       }
 
-      candidates.push({
+      knownHeaderIds.add(threadUtils.normalizeMessageId(message.headerMessageId));
+      candidates.set(message.id, {
         id: message.id,
-        threadMessageIds: threadUtils.collectThreadMessageIds(message, fullMessage)
+        threadMessageIds: threadUtils.collectThreadMessageIds(message, fullMessage),
+        references: threadUtils.collectReferencedMessageIds(fullMessage?.headers)
       });
     }
 
+    async function addQueryMatches(query, matches) {
+      let page = await messenger.messages.query({ folderId, ...query });
+      while (page) {
+        for (const message of page.messages) {
+          if (matches(message)) {
+            await addCandidate(message);
+          }
+        }
+        page = page.id ? await messenger.messages.continueList(page.id) : null;
+      }
+    }
+
+    await addCandidate(original);
+    if (normalizedSubject) {
+      await addQueryMatches({ subject: normalizedSubject },
+        message => threadUtils.normalizeSubject(message.subject) === normalizedSubject);
+    }
+
+    // Follow references from connected messages, even when the subject changed.
+    // Search by exact Message-ID to avoid loading every message in the folder.
+    const searchedReferences = new Set();
+    let messageIds;
+    let candidateCount;
+    do {
+      candidateCount = candidates.size;
+      messageIds = threadUtils.findConnectedMessageIds([...candidates.values()], originalMessageId);
+      for (const id of messageIds) {
+        for (const reference of candidates.get(id).references) {
+          const normalizedId = threadUtils.normalizeMessageId(reference);
+          if (knownHeaderIds.has(normalizedId) || searchedReferences.has(reference)) {
+            continue;
+          }
+          searchedReferences.add(reference);
+          try {
+            await addQueryMatches({ headerMessageId: reference },
+              message => threadUtils.normalizeMessageId(message.headerMessageId) === normalizedId);
+          } catch (error) {
+            incomplete = true;
+            console.warn('Could not search for a referenced message:', error);
+          }
+        }
+      }
+    } while (candidates.size !== candidateCount);
+
     return {
-      messageIds: threadUtils.findConnectedMessageIds(candidates, originalMessageId),
+      messageIds,
       wholeThread: true,
       incomplete
     };
