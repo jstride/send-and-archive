@@ -97,6 +97,37 @@ test('disabled option archives only the original message', async () => {
   assert.equal(harness.queryCalls.length, 0);
 });
 
+test('compose action proceeds immediately without a managed release API', async () => {
+  createHarness();
+
+  assert.equal(await background.waitForComposeActionRelease(42), true);
+});
+
+test('compose action uses the managed release result when available', async () => {
+  createHarness();
+  const tabIds = [];
+  messenger.sendAndArchiveRelease = {
+    async waitForRelease(tabId) {
+      tabIds.push(tabId);
+      return false;
+    }
+  };
+
+  assert.equal(await background.waitForComposeActionRelease(42), false);
+  assert.deepEqual(tabIds, [42]);
+});
+
+test('compose action fails closed when managed release verification fails', async () => {
+  createHarness();
+  messenger.sendAndArchiveRelease = {
+    async waitForRelease() {
+      throw new Error('release unavailable');
+    }
+  };
+
+  assert.equal(await background.waitForComposeActionRelease(42), false);
+});
+
 test('waits for persisted settings before deciding whether to archive the thread', async () => {
   let resolveSettings;
   const settingsResult = new Promise(resolve => {

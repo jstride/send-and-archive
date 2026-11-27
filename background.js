@@ -32,6 +32,26 @@ async function loadSettings() {
 }
 
 /**
+ * Let a host-specific integration defer pointer activation until mouse-up.
+ * Standard Thunderbird installations do not expose this optional API and
+ * retain the normal composeAction behavior.
+ * @param {number} tabId - The compose window tab ID
+ * @returns {Promise<boolean>} - True when the action should proceed
+ */
+async function waitForComposeActionRelease(tabId) {
+  const releaseApi = messenger.sendAndArchiveRelease;
+  if (!releaseApi || typeof releaseApi.waitForRelease !== 'function') {
+    return true;
+  }
+  try {
+    return await releaseApi.waitForRelease(tabId);
+  } catch (error) {
+    console.error('Could not verify Send and Archive button release:', error);
+    return false;
+  }
+}
+
+/**
  * Check if a compose window is a reply or forward (not a new message)
  * @param {number} tabId - The compose window tab ID
  * @returns {Promise<boolean>} - True if reply/forward, false if new message
@@ -405,6 +425,10 @@ function initializeExtension() {
 
   messenger.composeAction.onClicked.addListener(async (tab) => {
     console.log('Compose action button clicked');
+    if (!await waitForComposeActionRelease(tab.id)) {
+      console.log('Compose action cancelled before button release');
+      return;
+    }
     await sendAndArchive(tab.id);
   });
 
@@ -432,6 +456,7 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveThreadMessageIds,
     sendAndArchive,
     archiveMessages,
+    waitForComposeActionRelease,
     startLoadingSettingsForTesting() {
       settingsReady = loadSettings();
       return settingsReady;
